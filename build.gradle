@@ -276,17 +276,17 @@ task specialSourceRemap(type: JavaExec)
     ]
 }
 
-tasks.compileJava.dependsOn(executeBuildTools)
+tasks.compileJava
 
 compileJava {
     options.encoding = "UTF-8"
 }
 
-task setup()
-{
-    group("iris")
-    dependsOn(clean, executeBuildTools)
-}
+// task setup()
+// {
+//     group("iris")
+//     dependsOn(clean, executeBuildTools)
+// }
 
 task iris(type: Copy)
 {
