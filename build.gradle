@@ -24,7 +24,7 @@ plugins {
     id "de.undercouch.download" version "5.0.1"
 }
 
-version '2.7.7-1.20.1'
+version '2.8.0-1.20.1'
 def nmsVersion = '1.20.1' //[NMS]
 def apiVersion = '1.20'
 def specialSourceVersion = '1.11.0' //[NMS]
@@ -40,6 +40,7 @@ registerCustomOutputTask('ArcaneArts', 'C://Users/arcane/Documents/development/s
 registerCustomOutputTask('Coco', 'D://mcsm/plugins')
 registerCustomOutputTask('Strange', 'D://Servers/1.17 Test Server/plugins')
 registerCustomOutputTask('Vatuu', 'D://Minecraft/Servers/1.19.4/plugins')
+registerCustomOutputTask('CrazyDev22', 'C://Users/Julian/Desktop/server/plugins')
 // ========================== UNIX ==============================
 registerCustomOutputTaskUnix('CyberpwnLT', '/Users/danielmills/development/server/plugins')
 registerCustomOutputTaskUnix('PsychoLT', '/Users/brianfopiano/Desktop/REMOTES/RemoteMinecraft/plugins')
