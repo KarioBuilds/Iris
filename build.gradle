@@ -82,6 +82,7 @@ NMS_BINDINGS.each {
 
         // ======================== Building Mapped Jars =============================
 
+        /*
         ext {
             executeBuildTools = new Runnable() {
                 @Override
@@ -177,6 +178,7 @@ NMS_BINDINGS.each {
                 }
             }
         }
+         */
     }
 }
 
@@ -294,11 +296,13 @@ task setup() {
         dependsOn(":nms:${it.key}:clean");
     }
 
+    /*
     doLast {
         NMS_BINDINGS.each {
             project(":nms:${it.key}").property("executeBuildTools").run();
         }
     }
+     */
 }
 
 NMS_BINDINGS.keySet().forEach {
@@ -306,7 +310,7 @@ NMS_BINDINGS.keySet().forEach {
     tasks.register("setup-${nms}") {
         group "iris"
         dependsOn(":nms:${nms}:clean")
-        dependsOn(":nms:${nms}:executeBuildTools")
+        //dependsOn(":nms:${nms}:executeBuildTools")
     }
 }
 
