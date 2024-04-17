@@ -24,11 +24,13 @@ import com.volmit.iris.core.loader.IrisData;
 import com.volmit.iris.core.service.StudioSVC;
 import com.volmit.iris.core.tools.IrisBenchmarking;
 import com.volmit.iris.core.tools.IrisToolbelt;
+import com.volmit.iris.engine.framework.Engine;
 import com.volmit.iris.engine.object.IrisDimension;
 import com.volmit.iris.core.safeguard.UtilsSFG;
 import com.volmit.iris.engine.object.IrisWorld;
 import com.volmit.iris.engine.platform.BukkitChunkGenerator;
 import com.volmit.iris.engine.platform.DummyChunkGenerator;
+import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.decree.DecreeExecutor;
 import com.volmit.iris.util.decree.DecreeOrigin;
 import com.volmit.iris.util.decree.annotations.Decree;
@@ -52,6 +54,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import java.io.Console;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -74,8 +77,6 @@ public class CommandIris implements DecreeExecutor {
     private CommandEdit edit;
     private CommandFind find;
     private CommandDeveloper developer;
-
-    public static @Getter String BenchDimension;
     public static boolean worldCreation = false;
     String WorldToLoad;
     String WorldEngine;
@@ -89,7 +90,9 @@ public class CommandIris implements DecreeExecutor {
             @Param(aliases = "dimension", description = "The dimension type to create the world with", defaultValue = "default")
             IrisDimension type,
             @Param(description = "The seed to generate the world with", defaultValue = "1337")
-            long seed
+            long seed,
+            @Param(description = "If it should convert the dimension to match the vanilla height system.", defaultValue = "false")
+            boolean vanillaheight
     ) {
         if(sender() instanceof Player) {
             if (incompatibilities.get("Multiverse-Core")) {
@@ -133,6 +136,7 @@ public class CommandIris implements DecreeExecutor {
                     .seed(seed)
                     .sender(sender())
                     .studio(false)
+                    .smartVanillaHeight(vanillaheight)
                     .create();
         } catch (Throwable e) {
             sender().sendMessage(C.RED + "Exception raised during creation. See the console for more details.");
@@ -214,6 +218,44 @@ public class CommandIris implements DecreeExecutor {
     public void so() {
         sender().sendMessage(C.GREEN + "Opening studio for the \"Overworld\" pack (seed: 1337)");
         Iris.service(StudioSVC.class).open(sender(), 1337, "overworld");
+    }
+
+    @Decree(description = "Check access of all worlds.", aliases = {"accesslist"})
+    public void worlds() {
+        KList<World> IrisWorlds = new KList<>();
+        KList<World> BukkitWorlds = new KList<>();
+
+        for (World w : Bukkit.getServer().getWorlds()) {
+            try {
+                Engine engine = IrisToolbelt.access(w).getEngine();
+                if (engine != null) {
+                    IrisWorlds.add(w);
+                }
+            } catch (Exception e) {
+                BukkitWorlds.add(w);
+            }
+        }
+
+        if (sender().isPlayer()) {
+            sender().sendMessage(C.BLUE + "Iris Worlds: ");
+            for (World IrisWorld : IrisWorlds.copy()) {
+                sender().sendMessage(C.IRIS + "- " +IrisWorld.getName());
+            }
+            sender().sendMessage(C.GOLD + "Bukkit Worlds: ");
+            for (World BukkitWorld : BukkitWorlds.copy()) {
+                sender().sendMessage(C.GRAY + "- " +BukkitWorld.getName());
+            }
+        } else {
+            Iris.info(C.BLUE + "Iris Worlds: ");
+            for (World IrisWorld : IrisWorlds.copy()) {
+                Iris.info(C.IRIS + "- " +IrisWorld.getName());
+            }
+            Iris.info(C.GOLD + "Bukkit Worlds: ");
+            for (World BukkitWorld : BukkitWorlds.copy()) {
+                Iris.info(C.GRAY + "- " +BukkitWorld.getName());
+            }
+            
+        }
     }
 
     @Decree(description = "Remove an Iris world", aliases = {"del", "rm", "delete"}, sync = true)
@@ -584,6 +626,6 @@ public class CommandIris implements DecreeExecutor {
             ff.mkdirs();
             service(StudioSVC.class).installIntoWorld(sender, dim.getLoadKey(), ff.getParentFile());
         }
-        return new BukkitChunkGenerator(w, false, ff, dim.getLoadKey());
+        return new BukkitChunkGenerator(w, false, ff, dim.getLoadKey(), false);
     }
 }

@@ -26,6 +26,7 @@ import com.volmit.iris.core.loader.IrisData;
 import com.volmit.iris.core.project.IrisProject;
 import com.volmit.iris.core.service.ConversionSVC;
 import com.volmit.iris.core.service.StudioSVC;
+import com.volmit.iris.core.tools.IrisConverter;
 import com.volmit.iris.core.tools.IrisToolbelt;
 import com.volmit.iris.engine.framework.Engine;
 import com.volmit.iris.engine.object.*;
@@ -84,7 +85,7 @@ import java.util.function.Supplier;
 public class CommandStudio implements DecreeExecutor {
     private CommandFind find;
     private CommandEdit edit;
-    private CommandDeepSearch deepSearch;
+    //private CommandDeepSearch deepSearch;
 
     public static String hrf(Duration duration) {
         return duration.toString().substring(2).replaceAll("(\\d[HMS])(?!$)", "$1 ").toLowerCase();
@@ -229,8 +230,8 @@ public class CommandStudio implements DecreeExecutor {
     @Decree(description = "Convert objects in the \"convert\" folder")
     public void convert() {
         Iris.service(ConversionSVC.class).check(sender());
+        //IrisConverter.convertSchematics(sender());
     }
-
 
     @Decree(description = "Execute a script", aliases = "run", origin = DecreeOrigin.PLAYER)
     public void execute(
