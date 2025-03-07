@@ -23,17 +23,28 @@ import com.volmit.iris.core.IrisSettings;
 import com.volmit.iris.core.nms.v1X.NMSBinding1X;
 import org.bukkit.Bukkit;
 
+import java.util.List;
 import java.util.Map;
 
 public class INMS {
     private static final Map<String, String> REVISION = Map.of(
-        "1.20.5", "v1_20_R4",
-        "1.20.6", "v1_20_R4",
-        "1.21", "v1_21_R1",
-        "1.21.1", "v1_21_R1"
+            "1.20.5", "v1_20_R4",
+            "1.20.6", "v1_20_R4",
+            "1.21", "v1_21_R1",
+            "1.21.1", "v1_21_R1",
+            "1.21.2", "v1_21_R2",
+            "1.21.3", "v1_21_R2",
+            "1.21.4", "v1_21_R3"
     );
+    private static final List<Version> PACKS = List.of(
+            new Version(21, 4, "31010"),
+            new Version(21, 2, "31000"),
+            new Version(20, 1, "3910")
+    );
+
     //@done
     private static final INMSBinding binding = bind();
+    public static final String OVERWORLD_TAG = getOverworldTag();
 
     public static INMSBinding get() {
         return binding;
@@ -84,4 +95,26 @@ public class INMS {
 
         return new NMSBinding1X();
     }
+
+    private static String getOverworldTag() {
+        var version = Bukkit.getServer().getBukkitVersion().split("-")[0].split("\\.", 3);
+        int major = 0;
+        int minor = 0;
+
+        if (version.length > 2) {
+            major = Integer.parseInt(version[1]);
+            minor = Integer.parseInt(version[2]);
+        } else if (version.length == 2) {
+            major = Integer.parseInt(version[1]);
+        }
+
+        for (var p : PACKS) {
+            if (p.major > major || p.minor > minor)
+                continue;
+            return p.tag;
+        }
+        return "3910";
+    }
+
+    private record Version(int major, int minor, String tag) {}
 }

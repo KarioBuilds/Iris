@@ -20,10 +20,10 @@ package com.volmit.iris.engine.mantle;
 
 import com.volmit.iris.core.IrisSettings;
 import com.volmit.iris.core.loader.IrisData;
+import com.volmit.iris.core.nms.container.Pair;
 import com.volmit.iris.engine.IrisComplex;
 import com.volmit.iris.engine.framework.Engine;
 import com.volmit.iris.engine.framework.EngineTarget;
-import com.volmit.iris.engine.framework.SeedManager;
 import com.volmit.iris.engine.mantle.components.MantleJigsawComponent;
 import com.volmit.iris.engine.mantle.components.MantleObjectComponent;
 import com.volmit.iris.engine.object.IObjectPlacer;
@@ -34,6 +34,7 @@ import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.context.ChunkContext;
 import com.volmit.iris.util.context.IrisContext;
 import com.volmit.iris.util.data.B;
+import com.volmit.iris.util.data.IrisCustomData;
 import com.volmit.iris.util.documentation.BlockCoordinates;
 import com.volmit.iris.util.documentation.ChunkCoordinates;
 import com.volmit.iris.util.hunk.Hunk;
@@ -44,7 +45,6 @@ import com.volmit.iris.util.matter.*;
 import com.volmit.iris.util.matter.slices.UpdateMatter;
 import com.volmit.iris.util.parallel.BurstExecutor;
 import com.volmit.iris.util.parallel.MultiBurst;
-import org.bukkit.block.TileState;
 import org.bukkit.block.data.BlockData;
 
 import java.util.concurrent.TimeUnit;
@@ -59,7 +59,9 @@ public interface EngineMantle extends IObjectPlacer {
 
     int getRadius();
 
-    KList<MantleComponent> getComponents();
+    int getRealRadius();
+
+    KList<Pair<KList<MantleComponent>, Integer>> getComponents();
 
     void registerComponent(MantleComponent c);
 
@@ -103,11 +105,14 @@ public interface EngineMantle extends IObjectPlacer {
 
     @Override
     default void set(int x, int y, int z, BlockData d) {
-        getMantle().set(x, y, z, d == null ? AIR : d);
+        if (d instanceof IrisCustomData data) {
+            getMantle().set(x, y, z, data.getBase());
+            getMantle().set(x, y, z, data.getCustom());
+        } else getMantle().set(x, y, z, d == null ? AIR : d);
     }
 
     @Override
-    default void setTile(int x, int y, int z, TileData<? extends TileState> d) {
+    default void setTile(int x, int y, int z, TileData d) {
         getMantle().set(x, y, z, new TileWrapper(d));
     }
 
@@ -187,39 +192,37 @@ public interface EngineMantle extends IObjectPlacer {
         return getEngine().burst();
     }
 
-    default int getRealRadius() {
-        return (int) Math.ceil(getRadius() / 2D);
-    }
-
-
     @ChunkCoordinates
     default void generateMatter(int x, int z, boolean multicore, ChunkContext context) {
-        synchronized (this) {
-            if (!getEngine().getDimension().isUseMantle()) {
-                return;
-            }
+        if (!getEngine().getDimension().isUseMantle()) {
+            return;
+        }
 
-            int s = getRealRadius();
-            BurstExecutor burst = burst().burst(multicore);
-            MantleWriter writer = getMantle().write(this, x, z, s * 2);
-            for (int i = -s; i <= s; i++) {
-                for (int j = -s; j <= s; j++) {
-                    int xx = i + x;
-                    int zz = j + z;
-                    burst.queue(() -> {
-                        IrisContext.touch(getEngine().getContext());
-                        getMantle().raiseFlag(xx, zz, MantleFlag.PLANNED, () -> {
-                            MantleChunk mc = getMantle().getChunk(xx, zz);
+        try (MantleWriter writer = getMantle().write(this, x, z, getRadius() * 2)) {
+            var iterator = getComponents().iterator();
+            while (iterator.hasNext()) {
+                var pair = iterator.next();
+                int radius = pair.getB();
+                boolean last = !iterator.hasNext();
+                BurstExecutor burst = burst().burst(radius * 2 + 1);
+                burst.setMulticore(multicore);
 
-                            for (MantleComponent k : getComponents()) {
-                                generateMantleComponent(writer, xx, zz, k, mc, context);
-                            }
+                for (int i = -radius; i <= radius; i++) {
+                    for (int j = -radius; j <= radius; j++) {
+                        int xx = x + i;
+                        int zz = z + j;
+                        MantleChunk mc = getMantle().getChunk(xx, zz);
+
+                        burst.queue(() -> {
+                            IrisContext.touch(getEngine().getContext());
+                            pair.getA().forEach(k -> generateMantleComponent(writer, xx, zz, k, mc, context));
+                            if (last) mc.flag(MantleFlag.PLANNED, true);
                         });
-                    });
+                    }
                 }
-            }
 
-            burst.complete();
+                burst.complete();
+            }
         }
     }
 

@@ -5,7 +5,7 @@ import com.volmit.iris.core.loader.IrisData;
 import com.volmit.iris.core.tools.IrisToolbelt;
 import com.volmit.iris.engine.data.cache.Cache;
 import com.volmit.iris.engine.framework.Engine;
-import com.volmit.iris.engine.framework.IrisLootEvent;
+import com.volmit.iris.core.events.IrisLootEvent;
 import com.volmit.iris.engine.mantle.EngineMantle;
 import com.volmit.iris.engine.object.IObjectPlacer;
 import com.volmit.iris.engine.object.InventorySlotType;
@@ -13,6 +13,7 @@ import com.volmit.iris.engine.object.IrisLootTable;
 import com.volmit.iris.engine.object.TileData;
 import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.data.B;
+import com.volmit.iris.util.data.IrisCustomData;
 import com.volmit.iris.util.math.RNG;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -20,8 +21,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.block.BlockState;
-import org.bukkit.block.TileState;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.inventory.InventoryHolder;
 
@@ -74,13 +73,17 @@ public class WorldObjectPlacer implements IObjectPlacer {
                 if (tables.isEmpty())
                     return;
                 InventoryHolder m = (InventoryHolder) block.getState();
-                engine.addItems(false, m.getInventory(), rx, tables, slot, x, y, z, 15);
+                engine.addItems(false, m.getInventory(), rx, tables, slot, world, x, y, z, 15);
             } catch (Throwable e) {
                 Iris.reportError(e);
             }
         }
 
-        block.setBlockData(d);
+
+        if (d instanceof IrisCustomData data) {
+            block.setBlockData(data.getBase());
+            Iris.warn("Tried to place custom block at " + x + ", " + y + ", " + z + " which is not supported!");
+        } else block.setBlockData(d);
     }
 
     @Override
@@ -119,9 +122,7 @@ public class WorldObjectPlacer implements IObjectPlacer {
     }
 
     @Override
-    public void setTile(int xx, int yy, int zz, TileData<? extends TileState> tile) {
-        BlockState state = world.getBlockAt(xx, yy + world.getMinHeight(), zz).getState();
-        tile.toBukkitTry(state);
-        state.update();
+    public void setTile(int xx, int yy, int zz, TileData tile) {
+        tile.toBukkitTry(world.getBlockAt(xx, yy + world.getMinHeight(), zz));
     }
 }

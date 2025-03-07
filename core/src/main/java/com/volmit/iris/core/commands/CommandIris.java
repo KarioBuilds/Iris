@@ -20,9 +20,8 @@ package com.volmit.iris.core.commands;
 
 import com.volmit.iris.Iris;
 import com.volmit.iris.core.IrisSettings;
-import com.volmit.iris.core.ServerConfigurator;
 import com.volmit.iris.core.loader.IrisData;
-import com.volmit.iris.core.nms.datapack.DataVersion;
+import com.volmit.iris.core.nms.INMS;
 import com.volmit.iris.core.pregenerator.ChunkUpdater;
 import com.volmit.iris.core.service.StudioSVC;
 import com.volmit.iris.core.tools.IrisBenchmarking;
@@ -43,9 +42,7 @@ import com.volmit.iris.util.format.C;
 import com.volmit.iris.util.format.Form;
 import com.volmit.iris.util.plugin.VolmitSender;
 import com.volmit.iris.util.scheduling.J;
-import lombok.Getter;
 import org.bukkit.Bukkit;
-import org.bukkit.Difficulty;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.configuration.ConfigurationSection;
@@ -55,10 +52,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.io.Console;
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -94,9 +89,7 @@ public class CommandIris implements DecreeExecutor {
             @Param(aliases = "dimension", description = "The dimension type to create the world with", defaultValue = "default")
             IrisDimension type,
             @Param(description = "The seed to generate the world with", defaultValue = "1337")
-            long seed,
-            @Param(description = "If it should convert the dimension to match the vanilla height system.", defaultValue = "false")
-            boolean vanillaheight
+            long seed
     ) {
         if(sender() instanceof Player) {
             if (incompatibilities.get("Multiverse-Core")) {
@@ -140,7 +133,6 @@ public class CommandIris implements DecreeExecutor {
                     .seed(seed)
                     .sender(sender())
                     .studio(false)
-                    .smartVanillaHeight(vanillaheight)
                     .create();
         } catch (Throwable e) {
             sender().sendMessage(C.RED + "Exception raised during creation. See the console for more details.");
@@ -274,6 +266,17 @@ public class CommandIris implements DecreeExecutor {
             return;
         }
         sender().sendMessage(C.GREEN + "Removing world: " + world.getName());
+
+        if (!IrisToolbelt.evacuate(world)) {
+            sender().sendMessage(C.RED + "Failed to evacuate world: " + world.getName());
+            return;
+        }
+
+        if (!Bukkit.unloadWorld(world, false)) {
+            sender().sendMessage(C.RED + "Failed to unload world: " + world.getName());
+            return;
+        }
+
         try {
             if (IrisToolbelt.removeWorld(world)) {
                 sender().sendMessage(C.GREEN + "Successfully removed " + world.getName() + " from bukkit.yml");
@@ -286,27 +289,32 @@ public class CommandIris implements DecreeExecutor {
         }
         IrisToolbelt.evacuate(world, "Deleting world");
         deletingWorld = true;
-        Bukkit.unloadWorld(world, false);
-        int retries = 12;
-        if (delete) {
+        if (!delete) {
+            deletingWorld = false;
+            return;
+        }
+        VolmitSender sender = sender();
+        J.a(() -> {
+            int retries = 12;
+
             if (deleteDirectory(world.getWorldFolder())) {
-                sender().sendMessage(C.GREEN + "Successfully removed world folder");
+                sender.sendMessage(C.GREEN + "Successfully removed world folder");
             } else {
                 while(true){
                     if (deleteDirectory(world.getWorldFolder())){
-                        sender().sendMessage(C.GREEN + "Successfully removed world folder");
+                        sender.sendMessage(C.GREEN + "Successfully removed world folder");
                         break;
                     }
                     retries--;
                     if (retries == 0){
-                        sender().sendMessage(C.RED + "Failed to remove world folder");
+                        sender.sendMessage(C.RED + "Failed to remove world folder");
                         break;
                     }
                     J.sleep(3000);
                 }
             }
-        }
-        deletingWorld = false;
+            deletingWorld = false;
+        });
     }
 
     public static boolean deleteDirectory(File dir) {
@@ -405,7 +413,7 @@ public class CommandIris implements DecreeExecutor {
     ) {
         sender().sendMessage(C.GREEN + "Downloading pack: " + pack + "/" + branch + (trim ? " trimmed" : "") + (overwrite ? " overwriting" : ""));
         if (pack.equals("overworld")) {
-            String url = "https://github.com/IrisDimensions/overworld/releases/download/" + Iris.OVERWORLD_TAG + "/overworld.zip";
+            String url = "https://github.com/IrisDimensions/overworld/releases/download/" + INMS.OVERWORLD_TAG + "/overworld.zip";
             Iris.service(StudioSVC.class).downloadRelease(sender(), url, trim, overwrite);
         } else {
             Iris.service(StudioSVC.class).downloadSearch(sender(), "IrisDimensions/" + pack + "/" + branch, trim, overwrite);
@@ -649,6 +657,6 @@ public class CommandIris implements DecreeExecutor {
             ff.mkdirs();
             service(StudioSVC.class).installIntoWorld(sender, dim.getLoadKey(), ff.getParentFile());
         }
-        return new BukkitChunkGenerator(w, false, ff, dim.getLoadKey(), false);
+        return new BukkitChunkGenerator(w, false, ff, dim.getLoadKey());
     }
 }

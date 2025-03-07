@@ -25,7 +25,6 @@ import com.volmit.iris.engine.framework.Engine;
 import com.volmit.iris.engine.framework.placer.WorldObjectPlacer;
 import com.volmit.iris.engine.object.*;
 import com.volmit.iris.util.collection.KList;
-import com.volmit.iris.util.data.IrisBlockData;
 import com.volmit.iris.util.mantle.Mantle;
 import com.volmit.iris.util.math.Position2;
 import com.volmit.iris.util.math.RNG;
@@ -50,16 +49,18 @@ public class PlannedStructure {
     private IrisPosition position;
     private IrisData data;
     private RNG rng;
+    private boolean forcePlace;
     private boolean verbose;
     private boolean terminating;
 
-    public PlannedStructure(IrisJigsawStructure structure, IrisPosition position, RNG rng) {
+    public PlannedStructure(IrisJigsawStructure structure, IrisPosition position, RNG rng, boolean forcePlace) {
         terminating = false;
         verbose = true;
         this.pieces = new KList<>();
         this.structure = structure;
         this.position = position;
         this.rng = rng;
+        this.forcePlace = forcePlace || structure.isForcePlace();
         this.data = structure.getLoader();
         generateStartPiece();
 
@@ -108,6 +109,9 @@ public class PlannedStructure {
         } else {
             options.setMode(i.getPiece().getPlaceMode());
         }
+        if (forcePlace) {
+            options.setForcePlace(true);
+        }
 
         IrisObject v = i.getObject();
         int sx = (v.getW() / 2);
@@ -150,9 +154,6 @@ public class PlannedStructure {
         return v.place(xx, height, zz, placer, options, rng, (b, data) -> {
             e.set(b.getX(), b.getY(), b.getZ(), v.getLoadKey() + "@" + id);
             e.set(b.getX(), b.getY(), b.getZ(), container);
-            if (data instanceof IrisBlockData d) {
-                e.set(b.getX(), b.getY(), b.getZ(), d.getCustom());
-            }
         }, null, getData().getEngine() != null ? getData() : eng.getData()) != -1;
     }
 

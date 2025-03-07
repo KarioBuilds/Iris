@@ -29,13 +29,13 @@ import com.volmit.iris.engine.object.IrisPosition;
 import com.volmit.iris.engine.object.TileData;
 import com.volmit.iris.util.collection.KMap;
 import com.volmit.iris.util.collection.KSet;
+import com.volmit.iris.util.data.IrisCustomData;
 import com.volmit.iris.util.function.Function3;
 import com.volmit.iris.util.mantle.Mantle;
 import com.volmit.iris.util.mantle.MantleChunk;
 import com.volmit.iris.util.math.RNG;
 import com.volmit.iris.util.matter.Matter;
 import lombok.Data;
-import org.bukkit.block.TileState;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.util.Vector;
 
@@ -44,7 +44,7 @@ import java.util.List;
 import java.util.Set;
 
 @Data
-public class MantleWriter implements IObjectPlacer {
+public class MantleWriter implements IObjectPlacer, AutoCloseable {
     private final EngineMantle engineMantle;
     private final Mantle mantle;
     private final KMap<Long, MantleChunk> cachedChunks;
@@ -62,7 +62,7 @@ public class MantleWriter implements IObjectPlacer {
 
         for (int i = -radius; i <= radius; i++) {
             for (int j = -radius; j <= radius; j++) {
-                cachedChunks.put(Cache.key(i + x, j + z), mantle.getChunk(i + x, j + z));
+                cachedChunks.put(Cache.key(i + x, j + z), mantle.getChunk(i + x, j + z).use());
             }
         }
     }
@@ -167,7 +167,10 @@ public class MantleWriter implements IObjectPlacer {
 
     @Override
     public void set(int x, int y, int z, BlockData d) {
-        setData(x, y, z, d);
+        if (d instanceof IrisCustomData data) {
+            setData(x, y, z, data.getBase());
+            setData(x, y, z, data.getCustom());
+        } else setData(x, y, z, d);
     }
 
     @Override
@@ -206,7 +209,7 @@ public class MantleWriter implements IObjectPlacer {
     }
 
     @Override
-    public void setTile(int xx, int yy, int zz, TileData<? extends TileState> tile) {
+    public void setTile(int xx, int yy, int zz, TileData tile) {
         getEngineMantle().setTile(xx, yy, zz, tile);
     }
 
@@ -632,5 +635,13 @@ public class MantleWriter implements IObjectPlacer {
 
         return cx >= this.x - radius && cx <= this.x + radius
                 && cz >= this.z - radius && cz <= this.z + radius;
+    }
+
+    @Override
+    public void close() {
+        cachedChunks.values().removeIf(c -> {
+            c.release();
+            return true;
+        });
     }
 }
