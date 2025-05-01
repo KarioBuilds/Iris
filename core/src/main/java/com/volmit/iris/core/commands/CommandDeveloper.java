@@ -36,6 +36,7 @@ import com.volmit.iris.util.format.Form;
 import com.volmit.iris.util.io.CountingDataInputStream;
 import com.volmit.iris.util.io.IO;
 import com.volmit.iris.util.mantle.TectonicPlate;
+import com.volmit.iris.util.math.M;
 import com.volmit.iris.util.nbt.mca.MCAFile;
 import com.volmit.iris.util.nbt.mca.MCAUtil;
 import com.volmit.iris.util.parallel.MultiBurst;
@@ -62,6 +63,7 @@ import java.util.zip.GZIPOutputStream;
 @Decree(name = "Developer", origin = DecreeOrigin.BOTH, description = "Iris World Manager", aliases = {"dev"})
 public class CommandDeveloper implements DecreeExecutor {
     private CommandTurboPregen turboPregen;
+    private CommandLazyPregen lazyPregen;
     private CommandUpdater updater;
 
     @Decree(description = "Get Loaded TectonicPlates Count", origin = DecreeOrigin.BOTH, sync = true)
@@ -116,6 +118,42 @@ public class CommandDeveloper implements DecreeExecutor {
     }
 
     @Decree(description = "Test")
+    public void dumpThreads() {
+        try {
+            File fi = Iris.instance.getDataFile("dump", "td-" + new java.sql.Date(M.ms()) + ".txt");
+            FileOutputStream fos = new FileOutputStream(fi);
+            Map<Thread, StackTraceElement[]> f = Thread.getAllStackTraces();
+            PrintWriter pw = new PrintWriter(fos);
+
+            pw.println(Thread.activeCount() + "/" + f.size());
+            var run = Runtime.getRuntime();
+            pw.println("Memory:");
+            pw.println("\tMax: " + run.maxMemory());
+            pw.println("\tTotal: " + run.totalMemory());
+            pw.println("\tFree: " + run.freeMemory());
+            pw.println("\tUsed: " + (run.totalMemory() - run.freeMemory()));
+
+            for (Thread i : f.keySet()) {
+                pw.println("========================================");
+                pw.println("Thread: '" + i.getName() + "' ID: " + i.getId() + " STATUS: " + i.getState().name());
+
+                for (StackTraceElement j : f.get(i)) {
+                    pw.println("    @ " + j.toString());
+                }
+
+                pw.println("========================================");
+                pw.println();
+                pw.println();
+            }
+
+            pw.close();
+            Iris.info("DUMPED! See " + fi.getAbsolutePath());
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Decree(description = "Test")
     public void benchmarkMantle(
             @Param(description = "The world to bench", aliases = {"world"})
             World world
@@ -140,7 +178,7 @@ public class CommandDeveloper implements DecreeExecutor {
     public void packBenchmark(
             @Param(description = "The pack to bench", aliases = {"pack"}, defaultValue = "overworld")
             IrisDimension dimension,
-            @Param(description = "Radius in regions", defaultValue = "5")
+            @Param(description = "Radius in regions", defaultValue = "2048")
             int radius,
             @Param(description = "Open GUI while benchmarking", defaultValue = "false")
             boolean gui
