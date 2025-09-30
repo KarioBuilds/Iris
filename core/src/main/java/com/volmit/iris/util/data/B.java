@@ -21,6 +21,9 @@ package com.volmit.iris.util.data;
 import com.volmit.iris.Iris;
 import com.volmit.iris.core.IrisSettings;
 import com.volmit.iris.core.link.Identifier;
+import com.volmit.iris.core.link.data.DataType;
+import com.volmit.iris.core.nms.INMS;
+import com.volmit.iris.core.nms.container.BlockProperty;
 import com.volmit.iris.core.service.ExternalDataSVC;
 import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.collection.KMap;
@@ -34,10 +37,7 @@ import org.bukkit.block.data.Waterlogged;
 import org.bukkit.block.data.type.Leaves;
 import org.bukkit.block.data.type.PointedDripstone;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.bukkit.Material.*;
@@ -498,7 +498,7 @@ public class B {
             if (!ix.startsWith("minecraft:") && ix.contains(":")) {
                 Identifier key = Identifier.fromString(ix);
                 Optional<BlockData> bd = Iris.service(ExternalDataSVC.class).getBlockData(key);
-                Iris.info("Loading block data " + key);
+                Iris.debug("Loading block data " + key);
                 if (bd.isPresent())
                     bx = bd.get();
             }
@@ -609,8 +609,7 @@ public class B {
     }
 
     public static boolean isUpdatable(BlockData mat) {
-        return isLit(mat)
-                || isStorage(mat)
+        return isStorage(mat)
                 || (mat instanceof PointedDripstone
                 && ((PointedDripstone) mat).getThickness().equals(PointedDripstone.Thickness.TIP));
     }
@@ -673,11 +672,33 @@ public class B {
             }
         }
 
-        for (Identifier id : Iris.service(ExternalDataSVC.class).getAllBlockIdentifiers())
+        for (Identifier id : Iris.service(ExternalDataSVC.class).getAllIdentifiers(DataType.BLOCK))
             bt.add(id.toString());
         bt.addAll(custom.k());
 
         return bt.toArray(new String[0]);
+    }
+
+    public synchronized static KMap<List<String>, List<BlockProperty>> getBlockStates() {
+        KMap<List<BlockProperty>, List<String>> flipped = new KMap<>();
+        INMS.get().getBlockProperties().forEach((k, v) -> {
+            flipped.computeIfAbsent(v, $ -> new KList<>()).add(k.getKey().toString());
+        });
+
+        var emptyStates = flipped.computeIfAbsent(new KList<>(0), $ -> new KList<>());
+        for (var pair : Iris.service(ExternalDataSVC.class).getAllBlockProperties()) {
+            if (pair.getB().isEmpty()) emptyStates.add(pair.getA().toString());
+            else flipped.computeIfAbsent(pair.getB(), $ -> new KList<>()).add(pair.getA().toString());
+        }
+        emptyStates.addAll(custom.k());
+
+        KMap<List<String>, List<BlockProperty>> states = new KMap<>();
+        flipped.forEach((k, v) -> {
+            var old = states.put(v, k);
+            if (old != null) Iris.error("Duplicate block state: " + v + " (" + old + " and " + k + ")");
+        });
+
+        return states;
     }
 
     public static String[] getItemTypes() {
@@ -688,7 +709,7 @@ public class B {
             bt.add(v);
         }
 
-        for (Identifier id : Iris.service(ExternalDataSVC.class).getAllItemIdentifiers())
+        for (Identifier id : Iris.service(ExternalDataSVC.class).getAllIdentifiers(DataType.ITEM))
             bt.add(id.toString());
 
         return bt.toArray(new String[0]);

@@ -22,10 +22,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.volmit.iris.core.IrisSettings;
+import com.volmit.iris.core.IrisWorlds;
 import com.volmit.iris.core.ServerConfigurator;
 import com.volmit.iris.core.link.IrisPapiExpansion;
 import com.volmit.iris.core.link.MultiverseCoreLink;
-import com.volmit.iris.core.link.MythicMobsLink;
 import com.volmit.iris.core.loader.IrisData;
 import com.volmit.iris.core.nms.INMS;
 import com.volmit.iris.core.nms.v1X.NMSBinding1X;
@@ -66,9 +66,6 @@ import org.bukkit.*;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.generator.BiomeProvider;
@@ -82,6 +79,7 @@ import java.io.*;
 import java.lang.annotation.Annotation;
 import java.net.URL;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -95,10 +93,10 @@ public class Iris extends VolmitPlugin implements Listener {
     public static Iris instance;
     public static Bindings.Adventure audiences;
     public static MultiverseCoreLink linkMultiverseCore;
-    public static MythicMobsLink linkMythicMobs;
     public static IrisCompat compat;
     public static FileWatcher configWatcher;
     private static VolmitSender sender;
+    private static Thread shutdownHook;
 
     static {
         try {
@@ -438,8 +436,7 @@ public class Iris extends VolmitPlugin implements Listener {
 
     public Iris() {
         instance = this;
-        SlimJar.debug(IrisSettings.get().getSentry().isDebug());
-        SlimJar.load(getDataFolder("cache", "libraries"));
+        SlimJar.load();
     }
 
     private void enable() {
@@ -454,10 +451,10 @@ public class Iris extends VolmitPlugin implements Listener {
         getSender().setTag(getTag());
         IrisSafeguard.splash(true);
         linkMultiverseCore = new MultiverseCoreLink();
-        linkMythicMobs = new MythicMobsLink();
         configWatcher = new FileWatcher(getDataFile("settings.json"));
         services.values().forEach(IrisService::onEnable);
         services.values().forEach(this::registerListener);
+        addShutdownHook();
         J.s(() -> {
             J.a(IrisSafeguard::suggestPaper);
             J.a(() -> IO.delete(getTemp()));
@@ -470,48 +467,52 @@ public class Iris extends VolmitPlugin implements Listener {
             IrisSafeguard.splash(false);
 
             autoStartStudio();
-            checkForBukkitWorlds();
+            checkForBukkitWorlds(s -> true);
             IrisToolbelt.retainMantleDataForSlice(String.class.getCanonicalName());
             IrisToolbelt.retainMantleDataForSlice(BlockData.class.getCanonicalName());
         });
     }
 
-    private void checkForBukkitWorlds() {
-        FileConfiguration fc = new YamlConfiguration();
+    public void addShutdownHook() {
+        if (shutdownHook != null) {
+            Runtime.getRuntime().removeShutdownHook(shutdownHook);
+        }
+        shutdownHook = new Thread(() -> {
+            Bukkit.getWorlds()
+                    .stream()
+                    .map(IrisToolbelt::access)
+                    .filter(Objects::nonNull)
+                    .forEach(PlatformChunkGenerator::close);
+
+            MultiBurst.burst.close();
+            MultiBurst.ioBurst.close();
+            services.clear();
+        });
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+    }
+
+    public void checkForBukkitWorlds(Predicate<String> filter) {
         try {
-            fc.load(new File("bukkit.yml"));
-            ConfigurationSection section = fc.getConfigurationSection("worlds");
-            if (section == null) {
-                return;
-            }
+            IrisWorlds.readBukkitWorlds().forEach((s, generator) -> {
+                try {
+                    if (Bukkit.getWorld(s) != null || !filter.test(s)) return;
 
-            for (String s : section.getKeys(false)) {
-                ConfigurationSection entry = section.getConfigurationSection(s);
-                if (!entry.contains("generator", true)) {
-                    continue;
+                    Iris.info("Loading World: %s | Generator: %s", s, generator);
+                    var gen = getDefaultWorldGenerator(s, generator);
+                    var dim = loadDimension(s, generator);
+                    assert dim != null && gen != null;
+
+                    Iris.info(C.LIGHT_PURPLE + "Preparing Spawn for " + s + "' using Iris:" + generator + "...");
+                    WorldCreator c = new WorldCreator(s)
+                            .generator(gen)
+                            .environment(dim.getEnvironment());
+                    INMS.get().createWorld(c);
+                    Iris.info(C.LIGHT_PURPLE + "Loaded " + s + "!");
+                } catch (Throwable e) {
+                    Iris.error("Failed to load world " + s + "!");
+                    e.printStackTrace();
                 }
-
-                String generator = entry.getString("generator");
-                if (generator.startsWith("Iris:")) {
-                    generator = generator.split("\\Q:\\E")[1];
-                } else if (generator.equalsIgnoreCase("Iris")) {
-                    generator = IrisSettings.get().getGenerator().getDefaultWorldType();
-                } else {
-                    continue;
-                }
-
-                if (Bukkit.getWorld(s) != null)
-                    continue;
-
-                Iris.info("Loading World: %s | Generator: %s", s, generator);
-
-                Iris.info(C.LIGHT_PURPLE + "Preparing Spawn for " + s + "' using Iris:" + generator + "...");
-                WorldCreator c = new WorldCreator(s)
-                        .generator(getDefaultWorldGenerator(s, generator))
-                        .environment(IrisData.loadAnyDimension(generator).getEnvironment());
-                INMS.get().createWorld(c);
-                Iris.info(C.LIGHT_PURPLE + "Loaded " + s + "!");
-            }
+            });
         } catch (Throwable e) {
             e.printStackTrace();
             reportError(e);
@@ -566,17 +567,7 @@ public class Iris extends VolmitPlugin implements Listener {
         postShutdown.forEach(Runnable::run);
         super.onDisable();
 
-        J.attempt(new JarScanner(instance.getJarFile(), "", false)::scan);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            Bukkit.getWorlds()
-                    .stream()
-                    .map(IrisToolbelt::access)
-                    .filter(Objects::nonNull)
-                    .forEach(PlatformChunkGenerator::close);
-
-            MultiBurst.burst.close();
-            services.clear();
-        }));
+        J.attempt(new JarScanner(instance.getJarFile(), "", false)::scanAll);
     }
 
     private void setupPapi() {
@@ -716,7 +707,11 @@ public class Iris extends VolmitPlugin implements Listener {
         Iris.debug("Generator Config: " + w.toString());
 
         File ff = new File(w.worldFolder(), "iris/pack");
-        if (!ff.exists() || ff.listFiles().length == 0) {
+        var files = ff.listFiles();
+        if (files == null || files.length == 0)
+            IO.delete(ff);
+
+        if (!ff.exists()) {
             ff.mkdirs();
             service(StudioSVC.class).installIntoWorld(getSender(), dim.getLoadKey(), w.worldFolder());
         }
@@ -726,13 +721,13 @@ public class Iris extends VolmitPlugin implements Listener {
 
     @Nullable
     public static IrisDimension loadDimension(@NonNull String worldName, @NonNull String id) {
-        var data = IrisData.get(new File(Bukkit.getWorldContainer(), String.join(File.separator, worldName, "iris", "pack")));
-        var dimension = data.getDimensionLoader().load(id);
-        if (dimension == null) dimension = IrisData.loadAnyDimension(id);
+        File pack = new File(Bukkit.getWorldContainer(), String.join(File.separator, worldName, "iris", "pack"));
+        var dimension = pack.isDirectory() ? IrisData.get(pack).getDimensionLoader().load(id) : null;
+        if (dimension == null) dimension = IrisData.loadAnyDimension(id, null);
         if (dimension == null) {
             Iris.warn("Unable to find dimension type " + id + " Looking for online packs...");
             Iris.service(StudioSVC.class).downloadSearch(new VolmitSender(Bukkit.getConsoleSender()), id, false);
-            dimension = IrisData.loadAnyDimension(id);
+            dimension = IrisData.loadAnyDimension(id, null);
 
             if (dimension != null) {
                 Iris.info("Resolved missing dimension, proceeding.");
@@ -751,7 +746,7 @@ public class Iris extends VolmitPlugin implements Listener {
         String padd2 = Form.repeat(" ", 4);
         String[] info = {"", "", "", "", "", padd2 + C.IRIS + " Iris", padd2 + C.GRAY + " by " + "<rainbow>Volmit Software", padd2 + C.GRAY + " v" + C.IRIS + getDescription().getVersion()};
         if (unstablemode) {
-             info = new String[]{"", "", "", "", "", padd2 + C.RED + " Iris", padd2 + C.GRAY + " by " + C.DARK_RED + "Volmit Software", padd2 + C.GRAY + " v" + C.RED + getDescription().getVersion()};
+            info = new String[]{"", "", "", "", "", padd2 + C.RED + " Iris", padd2 + C.GRAY + " by " + C.DARK_RED + "Volmit Software", padd2 + C.GRAY + " v" + C.RED + getDescription().getVersion()};
         }
         if (warningmode) {
             info = new String[]{"", "", "", "", "", padd2 + C.GOLD + " Iris", padd2 + C.GRAY + " by " + C.GOLD + "Volmit Software", padd2 + C.GRAY + " v" + C.GOLD + getDescription().getVersion()};

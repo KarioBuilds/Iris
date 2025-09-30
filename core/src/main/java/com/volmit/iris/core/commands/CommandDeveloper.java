@@ -18,29 +18,41 @@
 
 package com.volmit.iris.core.commands;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.volmit.iris.Iris;
 import com.volmit.iris.core.ServerConfigurator;
+import com.volmit.iris.core.loader.IrisData;
+import com.volmit.iris.core.nms.INMS;
 import com.volmit.iris.core.nms.datapack.DataVersion;
 import com.volmit.iris.core.service.IrisEngineSVC;
 import com.volmit.iris.core.tools.IrisPackBenchmarking;
 import com.volmit.iris.core.tools.IrisToolbelt;
 import com.volmit.iris.engine.framework.Engine;
 import com.volmit.iris.engine.object.IrisDimension;
+import com.volmit.iris.engine.object.annotations.Snippet;
+import com.volmit.iris.util.collection.KSet;
 import com.volmit.iris.util.context.IrisContext;
+import com.volmit.iris.engine.object.IrisJigsawStructurePlacement;
+import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.decree.DecreeExecutor;
 import com.volmit.iris.util.decree.DecreeOrigin;
 import com.volmit.iris.util.decree.annotations.Decree;
 import com.volmit.iris.util.decree.annotations.Param;
+import com.volmit.iris.util.decree.specialhandlers.NullableDimensionHandler;
 import com.volmit.iris.util.format.C;
 import com.volmit.iris.util.format.Form;
 import com.volmit.iris.util.io.CountingDataInputStream;
 import com.volmit.iris.util.io.IO;
 import com.volmit.iris.util.mantle.TectonicPlate;
 import com.volmit.iris.util.math.M;
+import com.volmit.iris.util.matter.Matter;
 import com.volmit.iris.util.nbt.mca.MCAFile;
 import com.volmit.iris.util.nbt.mca.MCAUtil;
 import com.volmit.iris.util.parallel.MultiBurst;
 import com.volmit.iris.util.plugin.VolmitSender;
+import lombok.SneakyThrows;
 import net.jpountz.lz4.LZ4BlockInputStream;
 import net.jpountz.lz4.LZ4BlockOutputStream;
 import net.jpountz.lz4.LZ4FrameInputStream;
@@ -53,10 +65,12 @@ import org.bukkit.World;
 import java.io.*;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -64,7 +78,6 @@ import java.util.zip.GZIPOutputStream;
 public class CommandDeveloper implements DecreeExecutor {
     private CommandTurboPregen turboPregen;
     private CommandLazyPregen lazyPregen;
-    private CommandUpdater updater;
 
     @Decree(description = "Get Loaded TectonicPlates Count", origin = DecreeOrigin.BOTH, sync = true)
     public void EngineStatus() {
@@ -77,6 +90,33 @@ public class CommandDeveloper implements DecreeExecutor {
         Engine engine = engine();
         if (engine != null) IrisContext.getOr(engine);
         Iris.reportError(new Exception("This is a test"));
+    }
+
+    @Decree(description = "Test")
+    public void mantle(@Param(defaultValue = "false") boolean plate, @Param(defaultValue = "21474836474") String name) throws Throwable {
+        var base = Iris.instance.getDataFile("dump", "pv." + name + ".ttp.lz4b.bin");
+        var section = Iris.instance.getDataFile("dump", "pv." + name + ".section.bin");
+
+        //extractSection(base, section, 5604930, 4397);
+
+        if (plate) {
+            try (var in = CountingDataInputStream.wrap(new BufferedInputStream(new FileInputStream(base)))) {
+                new TectonicPlate(1088, in, true);
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
+        } else Matter.read(section);
+        if (!TectonicPlate.hasError())
+            Iris.info("Read " + (plate ? base : section).length() + " bytes from " + (plate ? base : section).getAbsolutePath());
+    }
+
+    private void extractSection(File source, File target, long offset, int length) throws IOException {
+        var raf = new RandomAccessFile(source, "r");
+        var bytes = new byte[length];
+        raf.seek(offset);
+        raf.readFully(bytes);
+        raf.close();
+        Files.write(target.toPath(), bytes);
     }
 
     @Decree(description = "Test")
@@ -115,25 +155,128 @@ public class CommandDeveloper implements DecreeExecutor {
         }
     }
 
-    @Decree(description = "Test")
-    public void benchmarkMantle(
-            @Param(description = "The world to bench", aliases = {"world"})
-            World world
-    ) throws IOException, ClassNotFoundException {
-        Engine engine = IrisToolbelt.access(world).getEngine();
-        int maxHeight = engine.getTarget().getHeight();
-        File folder = new File(Bukkit.getWorldContainer(), world.getName());
-        int c = 0;
-        //MCAUtil.read()
-
-        File tectonicplates = new File(folder, "mantle");
-        for (File i : Objects.requireNonNull(tectonicplates.listFiles())) {
-            TectonicPlate.read(maxHeight, i, true);
-            c++;
-            Iris.info("Loaded count: " + c );
-
+    @SneakyThrows
+    @Decree(description = "Generate Iris structures for all loaded datapack structures")
+    public void generateStructures(
+            @Param(description = "The pack to add the generated structures to", aliases = "pack", defaultValue = "null", customHandler = NullableDimensionHandler.class)
+            IrisDimension dimension,
+            @Param(description = "Ignore existing structures", defaultValue = "false")
+            boolean force
+    ) {
+        var map = INMS.get().collectStructures();
+        if (map.isEmpty()) {
+            sender().sendMessage(C.IRIS + "No structures found");
+            return;
         }
 
+        sender().sendMessage(C.IRIS + "Found " + map.size() + " structures");
+
+        final File dataDir;
+        final IrisData data;
+        final Set<String> existingStructures;
+        final Map<String, Set<String>> snippets;
+        final File dimensionFile;
+        final File structuresFolder;
+        final File snippetsFolder;
+
+        var dimensionObj = new JsonObject();
+
+        if (dimension == null) {
+            dataDir = Iris.instance.getDataFolder("structures");
+            IO.delete(dataDir);
+            data = IrisData.get(dataDir);
+            existingStructures = Set.of();
+            snippets = Map.of();
+            dimensionFile = new File(dataDir, "structures.json");
+        } else {
+            data = dimension.getLoader();
+            dataDir = data.getDataFolder();
+            existingStructures = new KSet<>(data.getJigsawStructureLoader().getPossibleKeys());
+
+            dimensionObj = data.getGson().fromJson(IO.readAll(dimension.getLoadFile()), JsonObject.class);
+            snippets = Optional.ofNullable(dimensionObj.getAsJsonArray("jigsawStructures"))
+                    .map(array -> array.asList()
+                            .stream()
+                            .filter(JsonElement::isJsonPrimitive)
+                            .collect(Collectors.toMap(element -> data.getGson()
+                                            .fromJson(element, IrisJigsawStructurePlacement.class)
+                                            .getStructure(),
+                                    element -> Set.of(element.getAsString()),
+                                    KSet::merge)))
+                    .orElse(Map.of());
+
+            dimensionFile = dimension.getLoadFile();
+        }
+        structuresFolder = new File(dataDir, "jigsaw-structures");
+        snippetsFolder = new File(dataDir, "snippet" + "/" + IrisJigsawStructurePlacement.class.getAnnotation(Snippet.class).value());
+
+        var gson = data.getGson();
+        var jigsawStructures = Optional.ofNullable(dimensionObj.getAsJsonArray("jigsawStructures"))
+                .orElse(new JsonArray(map.size()));
+
+        map.forEach((key, placement) -> {
+            String loadKey = "datapack/" + key.namespace() + "/" + key.key();
+            if (existingStructures.contains(loadKey) && !force)
+                return;
+
+            var structures = placement.structures();
+            var obj = placement.toJson(loadKey);
+            if (obj == null || structures.isEmpty()) {
+                sender().sendMessage(C.RED + "Failed to generate hook for " + key);
+                return;
+            }
+            File snippetFile = new File(snippetsFolder, loadKey + ".json");
+            try {
+                IO.writeAll(snippetFile, gson.toJson(obj));
+            } catch (IOException e) {
+                sender().sendMessage(C.RED + "Failed to generate snippet for " + key);
+                e.printStackTrace();
+                return;
+            }
+
+            Set<String> loadKeys = snippets.getOrDefault(loadKey, Set.of(loadKey));
+            jigsawStructures.asList().removeIf(e -> loadKeys.contains((e.isJsonObject() ? e.getAsJsonObject().get("structure") : e).getAsString()));
+            jigsawStructures.add("snippet/" + loadKey);
+
+            String structureKey;
+            if (structures.size() > 1) {
+                KList<String> common = new KList<>();
+                for (int i = 0; i < structures.size(); i++) {
+                    var tags = structures.get(i).tags();
+                    if (i == 0) common.addAll(tags);
+                    else common.removeIf(tag -> !tags.contains(tag));
+                }
+                structureKey = common.isNotEmpty() ? "#" + common.getFirst() : structures.getFirst().key();
+            } else structureKey = structures.getFirst().key();
+
+            JsonArray array = new JsonArray();
+            if (structures.size() > 1) {
+                structures.stream()
+                        .flatMap(structure -> {
+                            String[] arr = new String[structure.weight()];
+                            Arrays.fill(arr, structure.key());
+                            return Arrays.stream(arr);
+                        })
+                        .forEach(array::add);
+            } else array.add(structureKey);
+
+            obj = new JsonObject();
+            obj.addProperty("structureKey", structureKey);
+            obj.add("datapackStructures", array);
+
+            File out = new File(structuresFolder, loadKey + ".json");
+            out.getParentFile().mkdirs();
+            try {
+                IO.writeAll(out, gson.toJson(obj));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+
+        dimensionObj.add("jigsawStructures", jigsawStructures);
+        IO.writeAll(dimensionFile, gson.toJson(dimensionObj));
+
+        data.hotloaded();
     }
 
     @Decree(description = "Test")

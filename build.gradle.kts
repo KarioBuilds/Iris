@@ -24,20 +24,19 @@ import kotlin.system.exitProcess
 
 buildscript {
     repositories.maven("https://jitpack.io")
-    dependencies.classpath("com.github.VolmitSoftware:NMSTools:c5cbc46ce6")
+    dependencies.classpath("com.github.VolmitSoftware:NMSTools:c88961416f")
 }
 
 plugins {
     java
     `java-library`
     alias(libs.plugins.shadow)
-    alias(libs.plugins.sentry)
     alias(libs.plugins.download)
     alias(libs.plugins.runPaper)
 }
 
 group = "com.volmit"
-version = "3.7.0-1.20.1-1.21.7"
+version = "3.7.10-1.20.1-1.21.8"
 
 apply<ApiGenerator>()
 
@@ -63,10 +62,10 @@ val serverMinHeap = "2G"
 val serverMaxHeap = "8G"
 //Valid values are: none, truecolor, indexed256, indexed16, indexed8
 val color = "truecolor"
-val errorReporting = false
+val errorReporting = findProperty("errorReporting") as Boolean? ?: false
 
 val nmsBindings = mapOf(
-        "v1_21_R5" to "1.21.7-R0.1-SNAPSHOT",
+        "v1_21_R5" to "1.21.8-R0.1-SNAPSHOT",
         "v1_21_R4" to "1.21.5-R0.1-SNAPSHOT",
         "v1_21_R3" to "1.21.4-R0.1-SNAPSHOT",
         "v1_21_R2" to "1.21.3-R0.1-SNAPSHOT",
@@ -81,10 +80,6 @@ nmsBindings.forEach { key, value ->
     project(":nms:$key") {
         apply<JavaPlugin>()
         apply<NMSToolsPlugin>()
-
-        repositories {
-            maven("https://libraries.minecraft.net")
-        }
 
         extensions.configure(NMSToolsExtension::class) {
             jvm = jvmVersion.getOrDefault(key, 21)
@@ -106,7 +101,7 @@ nmsBindings.forEach { key, value ->
         pluginJars(tasks.jar.flatMap { it.archiveFile })
         javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(jvmVersion.getOrDefault(key, 21))}
         runDirectory.convention(layout.buildDirectory.dir("run/$key"))
-        systemProperty("disable.watchdog", "")
+        systemProperty("disable.watchdog", "true")
         systemProperty("net.kyori.ansi.colorLevel", color)
         systemProperty("com.mojang.eula.agree", true)
         systemProperty("iris.suppressReporting", !errorReporting)
@@ -156,12 +151,13 @@ tasks {
         group = "io.sentry"
         dependsOn("downloadCli")
         doLast {
+            val url = "http://sentry.volmit.com:8080"
             val authToken = project.findProperty("sentry.auth.token") ?: System.getenv("SENTRY_AUTH_TOKEN")
-            val org = "volmit-software"
+            val org = "sentry"
             val projectName = "iris"
-            exec(cli, "releases", "new", "--auth-token", authToken, "-o", org, "-p", projectName, version)
-            exec(cli, "releases", "set-commits", "--auth-token", authToken, "-o", org, "-p", projectName, version, "--auto", "--ignore-missing")
-            exec(cli, "releases", "finalize", "--auth-token", authToken, "-o", org, "-p", projectName, version)
+            exec(cli, "--url", url , "--auth-token", authToken, "releases", "new", "-o", org, "-p", projectName, version)
+            exec(cli, "--url", url , "--auth-token", authToken, "releases", "set-commits", "-o", org, "-p", projectName, version, "--auto", "--ignore-missing")
+            //exec(cli, "--url", url, "--auth-token", authToken, "releases", "finalize", "-o", org, "-p", projectName, version)
             cli.delete()
         }
     }
