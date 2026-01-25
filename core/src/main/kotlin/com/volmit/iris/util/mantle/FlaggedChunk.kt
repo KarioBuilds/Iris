@@ -3,6 +3,9 @@ package com.volmit.iris.util.mantle
 import com.volmit.iris.util.data.Varint
 import com.volmit.iris.util.mantle.flag.MantleFlag
 import com.volmit.iris.util.parallel.AtomicBooleanArray
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.DataInput
@@ -22,9 +25,21 @@ abstract class FlaggedChunk() {
 
     abstract fun isClosed(): Boolean
 
-    protected fun copyFlags(other: FlaggedChunk) {
+    protected fun copyFrom(other: FlaggedChunk, action: Runnable) = runBlocking {
+        coroutineScope {
+            for (i in 0 until flags.length()) {
+                launch { locks[i].lock() }.start()
+            }
+        }
+
+        action.run()
+
         for (i in 0 until flags.length()) {
-            flags.set(i, other.flags.get(i))
+            flags[i] = other.flags[i]
+        }
+
+        for (i in 0 until flags.length()) {
+            locks[i].unlock()
         }
     }
 
@@ -34,19 +49,15 @@ abstract class FlaggedChunk() {
         flags.set(flag.ordinal(), value)
     }
 
-    suspend fun raiseFlagSuspend(guard: MantleFlag?, flag: MantleFlag, task: suspend () -> Unit) {
+    suspend fun raiseFlagSuspend(flag: MantleFlag, task: suspend () -> Unit) {
         if (isClosed()) throw IllegalStateException("Chunk is closed!")
-        if (guard != null && isFlagged(guard)) return
+        if (isFlagged(flag)) return
 
         locks[flag.ordinal()].withLock {
-            if (flags.compareAndSet(flag.ordinal(), false, true)) {
-                try {
-                    task()
-                } catch (e: Throwable) {
-                    flags.set(flag.ordinal(), false)
-                    throw e
-                }
-            }
+            if (isFlagged(flag)) return
+            task()
+            if (flags.getAndSet(flag.ordinal(), true))
+                throw IllegalStateException("Flag ${flag.name()} was already set after task ran!")
         }
     }
 

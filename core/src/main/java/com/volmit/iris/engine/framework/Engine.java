@@ -851,7 +851,7 @@ public interface Engine extends DataProvider, Fallible, LootProvider, BlockUpdat
             }
         }
 
-        IrisBiome biome = getBiome(x, y, z);
+        IrisBiome biome = getSurfaceBiome(x, z);
 
         for (IrisObjectPlacement i : biome.getObjects()) {
             if (i.getPlace().contains(object)) {
@@ -1000,7 +1000,7 @@ public interface Engine extends DataProvider, Fallible, LootProvider, BlockUpdat
 
     default void cleanupMantleChunk(int x, int z) {
         if (IrisSettings.get().getPerformance().isTrimMantleInStudio() || !isStudio()) {
-            J.a(() -> getMantle().cleanupChunk(x, z));
+            getMantle().cleanupChunk(x, z);
         }
     }
 }
