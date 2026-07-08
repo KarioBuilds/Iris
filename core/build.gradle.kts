@@ -69,6 +69,9 @@ dependencies {
         isTransitive = false
     }
     compileOnly(libs.multiverseCore)
+    compileOnly(libs.craftengine.core)
+    compileOnly(libs.craftengine.bukkit)
+    //compileOnly(libs.sparrowNbt)
 
     // Shaded
     implementation(slimjarHelper("spigot"))

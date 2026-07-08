@@ -96,9 +96,9 @@ public class DataFixerV1217 extends DataFixerV1213 {
 
         JSONObject particle = (JSONObject) effects.remove("particle");
         if (particle != null) {
+            particle.put("particle", particle.remove("options"));
             attributes.put("minecraft:visual/ambient_particles", new JSONArray()
-                    .put(particle.getJSONObject("options")
-                            .put("probability", particle.get("probability"))));
+                    .put(particle));
         }
         json.put("attributes", attributes);
 
@@ -115,7 +115,7 @@ public class DataFixerV1217 extends DataFixerV1213 {
             attributes.put("minecraft:gameplay/fast_lava", true);
             attributes.put("minecraft:gameplay/snow_golem_melts", true);
             attributes.put("minecraft:visual/default_dripstone_particle", new JSONObject()
-                    .put("value", "minecraft:dripstone_drip_water_lava"));
+                    .put("type", "minecraft:dripping_dripstone_lava"));
         }
 
         if ((Boolean) json.remove("bed_works")) {

@@ -34,7 +34,7 @@ plugins {
 }
 
 group = "com.volmit"
-version = "3.9.1-1.20.1-1.21.11"
+version = "3.9.2-1.20.1-1.21.11"
 
 apply<ApiGenerator>()
 
@@ -206,6 +206,7 @@ allprojects {
         maven("https://mvn.lumine.io/repository/maven-public/") // mythic
         maven("https://nexus.phoenixdevt.fr/repository/maven-public/") //MMOItems
         maven("https://repo.onarandombox.com/content/groups/public/") //Multiverse Core
+        maven("https://repo.momirealms.net/releases/") //CraftEngine
     }
 
     dependencies {
